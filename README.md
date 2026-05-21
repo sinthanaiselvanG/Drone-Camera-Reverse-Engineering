@@ -25,24 +25,18 @@ The main objective of this project was to understand how embedded wireless video
 
 ---
 
-# 🧠 How It Works
+# 🧠 Project Objective
 
-The drone camera transmits fragmented JPEG frames over UDP packets.
+The primary goal of this project was to understand how embedded wireless video transmission systems work internally.
 
-Using Wireshark, the communication packets were analyzed to identify:
+Instead of using official SDKs or APIs, the communication protocol of a discarded drone camera was analyzed manually using packet inspection and reverse engineering techniques.
 
-- stream initialization commands
-- camera switch commands
-- packet structure
-- frame identifiers
-- payload format
-
-The Python application:
-1. Receives UDP packets
-2. Orders fragmented frame chunks
-3. Reconstructs complete image frames
-4. Decodes JPEG images using OpenCV
-5. Streams frames through Django
+This project focuses on:
+- UDP-based wireless communication
+- proprietary protocol analysis
+- fragmented frame reconstruction
+- real-time browser streaming
+- low-cost hardware experimentation
 
 ---
 
@@ -53,18 +47,183 @@ Drone Camera
      ↓
 UDP Packet Stream
      ↓
-Packet Reverse Engineering
+Packet Capture & Analysis
+     ↓
+Reverse Engineering
      ↓
 Frame Chunk Ordering
      ↓
-Frame Reconstruction
+JPEG Frame Reconstruction
      ↓
-OpenCV JPEG Decode
+OpenCV Decode
      ↓
 Django Streaming Server
      ↓
 Browser Live Feed
 ```
+
+---
+
+# 📡 Reverse Engineering Process
+
+The drone camera was recovered from discarded hardware.
+
+Using Wireshark, network traffic between the original drone application and the camera was analyzed to identify:
+
+- stream initialization packets
+- camera switch commands
+- UDP packet structure
+- frame identifiers
+- payload positions
+- fragmented image transmission behavior
+
+Important discoveries included:
+- proprietary command bytes
+- packet ordering logic
+- frame reconstruction patterns
+- JPEG payload fragmentation
+
+Example discovered command packets:
+
+```python
+b'\x42\x76'   # Start stream
+b'\x42\x79'   # Switch camera
+```
+
+---
+
+# 🧩 Frame Reconstruction Logic
+
+One of the most important parts of this project is the frame reconstruction system.
+
+The drone camera does not transmit a complete image in a single UDP packet.
+
+Instead:
+- each camera frame is divided into multiple smaller UDP chunks
+- every packet contains:
+  - frame identifier
+  - payload data
+  - packet metadata
+
+The application continuously listens for incoming UDP packets and reconstructs the original image frame in real time.
+
+---
+
+# ⚙️ How Frame Formation Works
+
+## Step 1 — Receive UDP Packet
+
+The application listens for UDP packets from the camera:
+
+```python
+data, addr = sock.recvfrom(65535)
+```
+
+Each packet contains:
+- frame metadata
+- frame ID
+- partial JPEG image data
+
+---
+
+## Step 2 — Extract Frame Identifier
+
+The first byte is used as a frame identifier:
+
+```python
+frame_id = data[0]
+```
+
+This helps determine which packets belong to the same image frame.
+
+---
+
+## Step 3 — Extract JPEG Payload
+
+The actual JPEG image chunk starts after packet headers:
+
+```python
+payload = data[8:]
+```
+
+The payload data is appended into a temporary frame buffer.
+
+---
+
+## Step 4 — Buffer Fragmented Chunks
+
+Since a single image arrives as many UDP packets, all payload chunks are buffered together:
+
+```python
+frame_buffer.extend(payload)
+```
+
+This gradually reconstructs the original JPEG image data.
+
+---
+
+## Step 5 — Detect Frame Boundary
+
+When a new frame ID appears:
+
+```python
+if frame_id != current_frame_id:
+```
+
+the application understands that:
+- the previous image frame is complete
+- a new image frame has started
+
+---
+
+## Step 6 — Reconstruct Complete JPEG Frame
+
+The buffered payload is converted into a NumPy array:
+
+```python
+np.frombuffer(frame_buffer, dtype=np.uint8)
+```
+
+Then decoded using OpenCV:
+
+```python
+cv2.imdecode(..., cv2.IMREAD_COLOR)
+```
+
+This recreates the original camera frame.
+
+---
+
+## Step 7 — Stream to Browser
+
+The decoded frame is:
+- streamed through Django
+- optionally recorded
+- optionally saved as image
+
+The stream is served as MJPEG for real-time browser viewing.
+
+---
+
+# 🧠 Why Frame Reconstruction Was Important
+
+UDP is connectionless and does not guarantee:
+- packet ordering
+- packet delivery
+- frame integrity
+
+Because of this:
+- packets may arrive fragmented
+- frames may be incomplete
+- ordering becomes important
+
+The reconstruction logic ensures:
+- correct frame assembly
+- stable video streaming
+- proper JPEG decoding
+- smooth browser playback
+
+This was one of the core technical challenges of the project.
 
 ---
 
@@ -99,32 +258,6 @@ Camera_udp_reverse_engineering/
 ├── requirements.txt
 ├── .gitignore
 └── README.md
-```
-
----
-
-# 📡 Reverse Engineering Process
-
-The drone camera was recovered from discarded hardware.
-
-Using Wireshark, network traffic between the drone controller application and the camera was analyzed to identify proprietary control packets.
-
-Important discoveries included:
-- stream start command packets
-- camera swap commands
-- UDP packet format
-- fragmented JPEG transmission structure
-- frame chunk ordering logic
-
-The camera transmitted image frames as multiple fragmented UDP chunks.
-
-The application reconstructs the original frame by buffering and ordering packets using frame identifiers before decoding the final JPEG image.
-
-Example discovered command packets:
-
-```python
-b'\x42\x76'   # Start stream
-b'\x42\x79'   # Switch camera
 ```
 
 ---
@@ -211,26 +344,6 @@ http://127.0.0.1:8000
 - Capture Images
 - Record Video
 - Live MJPEG Feed
-
----
-
-# 🧩 Frame Reconstruction Logic
-
-One of the important parts of this project is the frame reconstruction process.
-
-The drone camera does not send a complete image in a single UDP packet.
-
-Instead, each JPEG frame is fragmented into multiple smaller UDP chunks.
-
-The application:
-- receives fragmented UDP packets
-- identifies frame IDs
-- buffers payload chunks
-- orders frame packets correctly
-- reconstructs the original JPEG frame
-- decodes the final image using OpenCV
-
-This process enables stable real-time streaming despite fragmented packet transmission.
 
 ---
 
