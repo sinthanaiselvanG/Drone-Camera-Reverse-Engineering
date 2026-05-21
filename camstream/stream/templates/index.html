@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Camera Stream</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #111;
+            color: white;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 15px;
+        }
+
+        .video-container {
+            display: inline-block;
+            border: 3px solid #444;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.6);
+            background: black;
+            position: relative;
+        }
+
+        img {
+            display: block;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .controls {
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 18px;
+            margin: 5px;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        .start {
+            background: #00aa55;
+            color: white;
+        }
+
+        .stop {
+            background: #cc3333;
+            color: white;
+        }
+
+        .capture {
+            background: #0066cc;
+            color: white;
+        }
+
+        .switch {
+            background: #888;
+            color: white;
+        }
+
+        /* Recording Button States */
+        .record-green {
+            background-color: #00aa55;
+            color: white;
+        }
+
+        .record-red {
+            background-color: #cc0000;
+            color: white;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .status-box {
+            margin-top: 15px;
+            font-size: 18px;
+        }
+
+        .connected {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        .disconnected {
+            color: #ff4444;
+            font-weight: bold;
+        }
+
+        .info-panel {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>📡 Drone Live Camera Stream</h1>
+
+    <div class="video-container">
+        <img id="video" width="640" height="480" alt="Live drone camera stream" />
+        <div class="overlay" id="overlayText">Idle</div>
+    </div>
+
+    <div class="controls">
+        <button class="start" onclick="startStream()">▶ Start</button>
+        <button class="stop" onclick="stopStream()">⛔ Stop</button>
+        <button class="capture" onclick="captureImage()">📸 Capture</button>
+        <button id="recordBtn" class="record-green" onclick="toggleRecord()">● Record</button>
+        <button class="switch" onclick="switchCamera()">🔄 Switch Camera</button>
+    </div>
+
+    <div class="status-box">
+        Status:
+        <span id="status" class="disconnected">Not Started</span>
+    </div>
+
+    <div class="info-panel">
+        <div id="actionMessage">System Ready</div>
+    </div>
+
+ <script>
+
+    let recordingActive = false;
+
+    function setMessage(msg) {
+        document.getElementById("actionMessage").innerText = msg;
+    }
+
+    function setOverlay(msg) {
+        document.getElementById("overlayText").innerText = msg;
+    }
+
+    function startStream() {
+        fetch("/stream/start/")
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("video").src = "/stream/video/";
+                setMessage("Stream starting...");
+                setOverlay("Connecting...");
+            });
+    }
+
+    function stopStream() {
+        fetch("/stream/stop/")
+            .then(res => res.json())
+            .then(data => {
+
+                document.getElementById("video").src = "";
+                recordingActive = false;
+
+                const btn = document.getElementById("recordBtn");
+                btn.classList.remove("record-red");
+                btn.classList.add("record-green");
+                btn.innerText = "● Record";
+
+                setOverlay("Stopped");
+                setMessage("Stream stopped");
+            });
+    }
+
+    function captureImage() {
+        setMessage("Capturing...");
+        fetch("/stream/capture/")
+            .then(res => res.json())
+            .then(data => {
+                setMessage(data.message);
+            });
+    }
+
+    function toggleRecord() {
+        fetch("/stream/record/")
+            .then(res => res.json())
+            .then(data => {
+
+                const btn = document.getElementById("recordBtn");
+
+                if (data.status === "recording_started") {
+                    recordingActive = true;
+                    btn.classList.remove("record-green");
+                    btn.classList.add("record-red");
+                    btn.innerText = "● Recording...";
+                    setOverlay("REC ●");
+                    setMessage("Recording started");
+                }
+
+                else if (data.status === "recording_stopped") {
+                    recordingActive = false;
+                    btn.classList.remove("record-red");
+                    btn.classList.add("record-green");
+                    btn.innerText = "● Record";
+                    setOverlay("Live");
+                    setMessage("Recording stopped");
+                }
+
+                else {
+                    setMessage(data.message);
+                }
+            });
+    }
+
+    function switchCamera() {
+
+            setMessage("Switching camera...");
+
+            fetch("/stream/switch_camera/")
+                .then(res => res.json())
+                .then(data => {
+                    setMessage("Camera switched");
+                })
+                .catch(err => {
+                    setMessage("Switch failed");
+                });
+        }
+
+    function updateStatus() {
+        fetch("/stream/status/")
+            .then(response => response.json())
+            .then(data => {
+
+                const statusElement = document.getElementById("status");
+
+                statusElement.innerText = data.message;
+
+                if (data.connected) {
+                    statusElement.className = "connected";
+                    if (!recordingActive)
+                        setOverlay("Live");
+                } else {
+                    statusElement.className = "disconnected";
+                }
+            });
+    }
+
+    setInterval(updateStatus, 1000);
+    updateStatus();
+
+</script>
+
+
+</body>
+
+</html>
